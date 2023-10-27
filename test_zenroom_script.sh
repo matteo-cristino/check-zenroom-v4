@@ -27,7 +27,7 @@ htp="hash to point '.*' of each object in"
 ### Rule caller restroom-mw
 # => Rule unknown ignore
 # Rule caller restroom-mw
-rcr="[rR]ule caller restroom-mw$"
+rcr="[rR]ule caller restroom-mw"
 
 ### number '' is without verify
 # => add verify at the beginning 
@@ -73,10 +73,11 @@ ref="check reflow signature"
 cp="copy( the | )'.*' in '.*' to '.*'|create( the | )copy of .* in"
 
 deprecated_statements="$found|$json|$ins|$htp|$rcr|$num|$len|$el|$pet|$ref|$cp"
-
+export deprecated_statements
 parser() {
-    line=$(echo $1 |sed -e "s/ I / /" \
-			-e "s/ the / /" \
+    if ( $2 ); then line=$(echo $1 | sed -e "0,/ a / s/ a / /" -e "0,/ an / s/ an / /"); fi 
+    line=$(echo $line |sed -e "s/ I / /" \
+			-e "s/ the / /g" \
 			-e "s/ have / /" \
 			-e "s/ known as / /" \
 			-e "s/^[rR]ule //" \
@@ -84,41 +85,46 @@ parser() {
 			-e "s/^[tT]hen //" \
 			-e "s/^[gG]iven //" \
 			-e "s/^[iI]f //" \
+			-e "s/^[eE]nd[iI]f//" \
 			-e "s/^[fF]oreach //" \
+			-e "s/^[eE]nd[fF]oreach//" \
 			-e "s/^[aA]nd //" \
 			-e "s/^that / /" \
 			-e "s/^an /a /" \
 			-e "s/ valid / /" \
 			-e "s/ all / /" \
 			-e "s/ inside / in /" \
-			-e "s/'.*'/\'\'/g"
+			-e "s/'[^']*'/\'\'/g" \
+			-e "/^\s*$/d"
 	)
     echo $line
 }
+export -f parser
 
+# TODO: handle chains in a better way by separating contracts
 ordered_statements() {
     if [ "$(cat $1 | grep -E '[rR]ule caller restroom-mw|[rR]ule unknown ignore')" != "" ]; then
 	valid=false
 	given=false
 	then=false
 	while read line; do
-	    if [ "$line" == "" ] || [ $(echo $line | grep -q "^#") ]; then
-		continue
-	    fi
-	    l=$(parser "$line")
 	    echo $line | grep  -q "^[gG]iven" && given=true && then=false
 	    echo $line | grep  -q -E "^[iI]f|^[fF]oreach|^[wW]hen" && given=false && then=false
 	    echo $line | grep  -q "^[tT]hen" && given=false && then=true
+	    l=$(parser "$line" $given)
+	    if [ "$l" == "" ] || [ "$(echo $line | grep -E "^#|^[rR]ule|^[sS]cenario")" != "" ]; then
+		continue
+	    fi
 	    #echo "$l: $given, $then"
 	    if $given; then
-		if ( ! $valid ) || [ $(grep -x -q "$l" zen_statements.yml) ]; then
+		if ( ! $valid ) || [ "$(grep -x "$l" zen_statements.yml)" != "" ]; then
 		    grep -x -q "$l" zen_statements.yml && valid=true || valid=false 
 		else
 		    grep -x -q "$l" zen_statements.yml && valid=true || valid=false
 		    echo "invalid statement in given: $line"
 		fi
 	    elif $then; then
-		if ( $valid ) || [ ! $(grep -x -q "$l" zen_statements.yml) ]; then
+		if ( $valid ) || [ "$(grep -x "$l" zen_statements.yml)" == "" ]; then
 		    grep -x -q "$l" zen_statements.yml && valid=true || valid=false
 		else
 		    grep -x -q "$l" zen_statements.yml && valid=true || valid=false
@@ -129,12 +135,12 @@ ordered_statements() {
 		    echo "invalid statement: $line"
 		fi
 	    fi
+	    
 	done <$1
     fi
-    return 0
+    cat $1 | grep -E "$deprecated_statements" && echo $1 && echo "------------------------"
 }
+export -f ordered_statements
 
-ordered_statements test.zen
-#find . -type f \( -name '*.yml' -o -name '*.zen' \) \
-#     -exec grep -E "$deprecated_statements" {} \; -and \
-#     -exec echo {} \;
+find ../../restroom-mw/ -type f \( -name '*.yml' -o -name '*.zen' \) \
+     -exec bash -c 'ordered_statements "$@"' bash {} \; \
