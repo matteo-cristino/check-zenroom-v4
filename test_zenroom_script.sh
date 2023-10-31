@@ -27,7 +27,7 @@ htp="hash to point '.*' of each object in"
 ### Rule caller restroom-mw
 # => Rule unknown ignore
 # Rule caller restroom-mw
-rcr="[rR]ule caller restroom-mw"
+rcr="^[rR]ule caller restroom-mw"
 
 ### number '' is without verify
 # => add verify at the beginning 
@@ -101,12 +101,12 @@ parser() {
 }
 export -f parser
 
-# TODO: handle chains in a better way by separating contracts
 ordered_statements() {
-    if [ "$(cat $1 | grep -E '[rR]ule caller restroom-mw|[rR]ule unknown ignore')" != "" ]; then
+    if [ "$(cat $1 | grep -E '^[rR]ule caller restroom-mw|^[rR]ule unknown ignore')" != "" ]; then
 	valid=false
 	given=false
 	then=false
+	found_invalid=false
 	while read line; do
 	    echo $line | grep  -q "^[gG]iven" && given=true && then=false
 	    echo $line | grep  -q -E "^[iI]f|^[fF]oreach|^[wW]hen" && given=false && then=false
@@ -115,13 +115,13 @@ ordered_statements() {
 	    if [ "$l" == "" ] || [ "$(echo $line | grep -E "^#|^[rR]ule|^[sS]cenario")" != "" ]; then
 		continue
 	    fi
-	    #echo "$l: $given, $then"
 	    if $given; then
 		if ( ! $valid ) || [ "$(grep -x "$l" zen_statements.yml)" != "" ]; then
 		    grep -x -q "$l" zen_statements.yml && valid=true || valid=false 
 		else
 		    grep -x -q "$l" zen_statements.yml && valid=true || valid=false
 		    echo "invalid statement in given: $line"
+		    found_invalid=true
 		fi
 	    elif $then; then
 		if ( $valid ) || [ "$(grep -x "$l" zen_statements.yml)" == "" ]; then
@@ -129,18 +129,41 @@ ordered_statements() {
 		else
 		    grep -x -q "$l" zen_statements.yml && valid=true || valid=false
 		    echo "invalid statement in then: $line"
+		    found_invalid=true
 		fi
 	    else
 		if [ "$(grep -x "$l" zen_statements.yml)" == "" ]; then
 		    echo "invalid statement: $line"
+		    found_invalid=true
+		else
+		    valid=true
 		fi
 	    fi
 	    
 	done <$1
+	if $found_invalid; then echo $2 && echo "------------------------"; fi
     fi
-    cat $1 | grep -E "$deprecated_statements" && echo $1 && echo "------------------------"
+    cat $1 | grep -E "$deprecated_statements" && echo $2 && echo "------------------------"
 }
 export -f ordered_statements
 
-find ../../restroom-mw/ -type f \( -name '*.yml' -o -name '*.zen' \) \
-     -exec bash -c 'ordered_statements "$@"' bash {} \; \
+# handle chains in a better way by separating contracts
+contract_parser() {
+    if [ ${1##*.} == "yml" ]; then
+	tmp=$(mktemp)
+	IFS=$'"\n'
+	for i in $(yq -o=j '.blocks.*.zenContent' $1 2>/dev/null); do
+	    if [ "$i" != "" ] && [ "$i" != "null" ]; then
+		echo "$i" > $tmp
+		ordered_statements $tmp $1
+	    fi
+	done
+	rm $tmp
+    else
+	ordered_statements $1 $1
+    fi
+}
+export -f contract_parser
+
+find . -type f \( -name '*.yml' -o -name '*.zen' \) \
+     -exec bash -c 'contract_parser "$@"' bash {} \; \
