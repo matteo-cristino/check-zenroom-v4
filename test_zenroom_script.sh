@@ -104,11 +104,11 @@ parser() {
 export -f parser
 
 ordered_statements() {
+    found_invalid=false
     if [ "$(cat $1 | grep -E '^[rR]ule caller restroom-mw|^[rR]ule unknown ignore')" != "" ]; then
 	valid=false
 	given=false
 	then=false
-	found_invalid=false
 	while read line; do
 	    echo $line | grep  -q "^[gG]iven" && given=true && then=false
 	    echo $line | grep  -q -E "^[iI]f|^[fF]oreach|^[wW]hen" && given=false && then=false
@@ -150,8 +150,9 @@ ordered_statements() {
     if [ "$dep" != "" ]; then
 	echo "${dep}"
     fi
-    if [ "$dep" != "" ] || ($found_invalid); then
-	echo $2 && echo "------------------------";
+    if ( $found_invalid ) || [ "$dep" != "" ]; then
+	echo $2
+	echo "------------------------"
     fi
 }
 export -f ordered_statements
