@@ -95,6 +95,8 @@ parser() {
 			-e "s/ all / /" \
 			-e "s/ inside / in /" \
 			-e "s/'[^']*'/\'\'/g" \
+			-e "s/  */ /g" \
+			-e "/\r$/d" \
 			-e "/^\s*$/d"
 	)
     echo $line
@@ -141,9 +143,16 @@ ordered_statements() {
 	    fi
 	    
 	done <$1
-	if $found_invalid; then echo $2 && echo "------------------------"; fi
     fi
-    cat $1 | grep -E "$deprecated_statements" && echo $2 && echo "------------------------"
+    dep=$(cat $1 | grep -E "$deprecated_statements" \
+	      | grep "^[^#]" \
+	      | sed "s/^/deprecated statement: /g")
+    if [ "$dep" != "" ]; then
+	echo "${dep}"
+    fi
+    if [ "$dep" != "" ] || ($found_invalid); then
+	echo $2 && echo "------------------------";
+    fi
 }
 export -f ordered_statements
 
@@ -154,7 +163,7 @@ contract_parser() {
 	IFS=$'"\n'
 	for i in $(yq -o=j '.blocks.*.zenContent' $1 2>/dev/null); do
 	    if [ "$i" != "" ] && [ "$i" != "null" ]; then
-		echo "$i" > $tmp
+		printf "$i" > $tmp
 		ordered_statements $tmp $1
 	    fi
 	done
@@ -165,5 +174,5 @@ contract_parser() {
 }
 export -f contract_parser
 
-find . -type f \( -name '*.yml' -o -name '*.zen' \) \
+find $1 -type f \( -name '*.yml' -o -name '*.zen' \) \
      -exec bash -c 'contract_parser "$@"' bash {} \; \
